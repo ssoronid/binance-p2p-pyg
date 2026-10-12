@@ -53,23 +53,68 @@ body {
   pointer-events: none;
 }
 
-.brand {
+.top-nav {
+  position: relative;
+  z-index: 20;
+  max-height: 120px;
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(8, 16, 12, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.top-nav-inner {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4.25rem;
+}
+
+.top-nav-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.brand-nav {
   font-family: var(--font-display), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.04em;
-  font-size: clamp(2.5rem, 8vw, 4.5rem);
-  line-height: 0.95;
+  font-size: clamp(1.45rem, 3.5vw, 1.85rem);
+  line-height: 1;
+  margin: 0;
 }
 
-.brand span {
+.brand-nav span {
   color: var(--accent);
 }
 
-.tagline {
+.top-nav-sub {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
+.top-nav-hint {
+  margin: 0;
   color: var(--muted);
-  font-size: 1.05rem;
-  max-width: 28rem;
-  line-height: 1.5;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  max-width: 18rem;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .top-nav-hint {
+    display: none;
+  }
 }
 
 .calc-panel {
@@ -282,6 +327,56 @@ body {
 
 .badge.muted {
   opacity: 0.85;
+}
+
+.filter-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filter-toggle-main {
+  min-width: 0;
+}
+
+.filter-toggle-summary {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.filter-chevron {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.filter-chevron.open {
+  transform: rotate(180deg);
+  color: var(--accent);
+  border-color: rgba(62, 207, 122, 0.45);
+}
+
+.filter-body {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 1rem;
+  animation: rise 0.25s ease both;
 }
 
 .filter-grid {

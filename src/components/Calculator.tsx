@@ -94,6 +94,7 @@ export default function Calculator() {
   const [ads, setAds] = useState<P2PAd[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<ConfidenceFilters>(DEFAULT_CONFIDENCE);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -277,119 +278,149 @@ export default function Calculator() {
       </form>
 
       <section className="calc-panel mt-4" aria-label="Confidence filters">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h2 className="text-sm font-medium tracking-wide uppercase text-[var(--muted)]">
-            Confidence filters
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(CONFIDENCE_PRESETS) as ConfidencePreset[]).map(
-              (key) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`chip ${activePreset === key ? "chip-active" : ""}`}
-                  onClick={() => setPreset(key)}
-                >
-                  {key}
-                </button>
-              ),
-            )}
-            {activePreset == null && <span className="chip chip-active">custom</span>}
+        <button
+          type="button"
+          className="filter-toggle"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((v) => !v)}
+        >
+          <div className="filter-toggle-main">
+            <h2 className="text-sm font-medium tracking-wide uppercase text-[var(--muted)]">
+              Confidence filters
+            </h2>
+            <p className="filter-toggle-summary">
+              {activePreset ?? "custom"} · ≥{filters.minMonthlyTrades} ops ·{" "}
+              {(filters.minCompletionRate * 100).toFixed(0)}% done ·{" "}
+              {confidentAds.length}/{ads.length || 0} pass
+            </p>
           </div>
-        </div>
+          <span className={`filter-chevron ${filtersOpen ? "open" : ""}`} aria-hidden>
+            ▾
+          </span>
+        </button>
 
-        <div className="filter-grid">
-          <label className="filter-field">
-            <span>Min monthly trades</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={filters.minMonthlyTrades}
-              onChange={(e) =>
-                patchFilter("minMonthlyTrades", Number(e.target.value) || 0)
-              }
-            />
-          </label>
-          <label className="filter-field">
-            <span>Min completion %</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={0.1}
-              value={Number((filters.minCompletionRate * 100).toFixed(1))}
-              onChange={(e) =>
-                patchFilter(
-                  "minCompletionRate",
-                  Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100,
-                )
-              }
-            />
-          </label>
-          <label className="filter-field">
-            <span>Min positive %</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={0.1}
-              value={Number((filters.minPositiveRate * 100).toFixed(1))}
-              onChange={(e) =>
-                patchFilter(
-                  "minPositiveRate",
-                  Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100,
-                )
-              }
-            />
-          </label>
-          <label className="filter-field">
-            <span>Min grade</span>
-            <input
-              type="number"
-              min={0}
-              max={5}
-              step={1}
-              value={filters.minUserGrade}
-              onChange={(e) =>
-                patchFilter("minUserGrade", Number(e.target.value) || 0)
-              }
-            />
-          </label>
-          <label className="filter-field">
-            <span>Max last-seen (min)</span>
-            <input
-              type="number"
-              min={0}
-              step={5}
-              value={
-                filters.maxActiveSeconds > 0
-                  ? Math.round(filters.maxActiveSeconds / 60)
-                  : 0
-              }
-              onChange={(e) => {
-                const mins = Number(e.target.value) || 0;
-                patchFilter("maxActiveSeconds", mins > 0 ? mins * 60 : 0);
-              }}
-            />
-            <em className="filter-hint">0 = off</em>
-          </label>
-          <label className="filter-check">
-            <input
-              type="checkbox"
-              checked={filters.massMerchantOnly}
-              onChange={(e) =>
-                patchFilter("massMerchantOnly", e.target.checked)
-              }
-            />
-            <span>Mass merchants only</span>
-          </label>
-        </div>
+        {filtersOpen && (
+          <div className="filter-body mt-4">
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(Object.keys(CONFIDENCE_PRESETS) as ConfidencePreset[]).map(
+                (key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`chip ${activePreset === key ? "chip-active" : ""}`}
+                    onClick={() => setPreset(key)}
+                  >
+                    {key}
+                  </button>
+                ),
+              )}
+              {activePreset == null && (
+                <span className="chip chip-active">custom</span>
+              )}
+            </div>
 
-        <p className="mt-3 text-xs text-[var(--muted)]">
-          {confidentAds.length} / {ads.length || 0} merchants pass · Auto-cover
-          uses this pool
-        </p>
+            <div className="filter-grid">
+              <label className="filter-field">
+                <span>Min monthly trades</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={filters.minMonthlyTrades}
+                  onChange={(e) =>
+                    patchFilter(
+                      "minMonthlyTrades",
+                      Number(e.target.value) || 0,
+                    )
+                  }
+                />
+              </label>
+              <label className="filter-field">
+                <span>Min completion %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={Number((filters.minCompletionRate * 100).toFixed(1))}
+                  onChange={(e) =>
+                    patchFilter(
+                      "minCompletionRate",
+                      Math.min(100, Math.max(0, Number(e.target.value) || 0)) /
+                        100,
+                    )
+                  }
+                />
+              </label>
+              <label className="filter-field">
+                <span>Min positive %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={Number((filters.minPositiveRate * 100).toFixed(1))}
+                  onChange={(e) =>
+                    patchFilter(
+                      "minPositiveRate",
+                      Math.min(100, Math.max(0, Number(e.target.value) || 0)) /
+                        100,
+                    )
+                  }
+                />
+              </label>
+              <label className="filter-field">
+                <span>Min grade</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={5}
+                  step={1}
+                  value={filters.minUserGrade}
+                  onChange={(e) =>
+                    patchFilter("minUserGrade", Number(e.target.value) || 0)
+                  }
+                />
+              </label>
+              <label className="filter-field">
+                <span>Max last-seen (min)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={
+                    filters.maxActiveSeconds > 0
+                      ? Math.round(filters.maxActiveSeconds / 60)
+                      : 0
+                  }
+                  onChange={(e) => {
+                    const mins = Number(e.target.value) || 0;
+                    patchFilter(
+                      "maxActiveSeconds",
+                      mins > 0 ? mins * 60 : 0,
+                    );
+                  }}
+                />
+                <em className="filter-hint">0 = off</em>
+              </label>
+              <label className="filter-check">
+                <input
+                  type="checkbox"
+                  checked={filters.massMerchantOnly}
+                  onChange={(e) =>
+                    patchFilter("massMerchantOnly", e.target.checked)
+                  }
+                />
+                <span>Mass merchants only</span>
+              </label>
+            </div>
+
+            <p className="mt-3 text-xs text-[var(--muted)]">
+              {confidentAds.length} / {ads.length || 0} merchants pass ·
+              Auto-cover uses this pool
+            </p>
+          </div>
+        )}
       </section>
 
       {error && (
