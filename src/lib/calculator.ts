@@ -29,7 +29,9 @@ export type QuoteResult = {
   mode: QuoteMode;
   requestedAmount: number;
   targetUsdt: number;
+  targetPyg: number | null;
   remainingUsdt: number;
+  remainingPyg: number;
   bestPrice: number | null;
   avgFillPrice: number | null;
   usdt: number;
@@ -56,11 +58,6 @@ function clampUsdtToAdLimits(ad: P2PAd, desiredUsdt: number): number | null {
   if (ad.maxFiat > 0 && pyg > ad.maxFiat) {
     usdt = ad.maxFiat / ad.price;
     pyg = usdt * ad.price;
-  }
-
-  if (ad.minUsdt > 0 && usdt < ad.minUsdt && desiredUsdt >= ad.minUsdt) {
-    // Can't take a partial below min if we wanted more — skip unless full min fits
-    return null;
   }
 
   if (ad.minUsdt > 0 && usdt < ad.minUsdt) {
@@ -91,7 +88,7 @@ export function calculateQuote(
   let totalUsdt = 0;
   let totalPyg = 0;
 
-  const targetUsdt =
+  const estimateUsdt =
     mode === "usdt_to_pyg"
       ? amount
       : ads[0]
@@ -99,7 +96,8 @@ export function calculateQuote(
         : 0;
 
   for (const ad of ads) {
-    if (remainingUsdt <= 1e-8 && remainingPyg <= 1e-2) break;
+    if (mode === "usdt_to_pyg" && remainingUsdt <= 1e-8) break;
+    if (mode === "pyg_to_usdt" && remainingPyg <= 1e-2) break;
 
     const desiredUsdt =
       mode === "usdt_to_pyg" ? remainingUsdt : remainingPyg / ad.price;
@@ -141,19 +139,29 @@ export function calculateQuote(
       : remainingPyg <= Math.max(amount * 0.001, 1);
 
   const avgFillPrice = totalUsdt > 0 ? totalPyg / totalUsdt : null;
-  const effectiveTarget =
-    mode === "usdt_to_pyg" ? amount : totalUsdt + Math.max(remainingUsdt, 0);
+
   const coveragePct =
-    effectiveTarget > 0
-      ? Math.min(100, (totalUsdt / effectiveTarget) * 100)
-      : 0;
+    mode === "usdt_to_pyg"
+      ? amount > 0
+        ? Math.min(100, (totalUsdt / amount) * 100)
+        : 0
+      : amount > 0
+        ? Math.min(100, (totalPyg / amount) * 100)
+        : 0;
+
+  const remUsdt =
+    remainingUsdt === Number.POSITIVE_INFINITY ? 0 : Math.max(remainingUsdt, 0);
+  const remPyg =
+    remainingPyg === Number.POSITIVE_INFINITY ? 0 : Math.max(remainingPyg, 0);
 
   return {
     side,
     mode,
     requestedAmount: amount,
-    targetUsdt: mode === "usdt_to_pyg" ? amount : targetUsdt,
-    remainingUsdt: Math.max(remainingUsdt === Number.POSITIVE_INFINITY ? 0 : remainingUsdt, 0),
+    targetUsdt: mode === "usdt_to_pyg" ? amount : totalUsdt || estimateUsdt,
+    targetPyg: mode === "pyg_to_usdt" ? amount : null,
+    remainingUsdt: remUsdt,
+    remainingPyg: remPyg,
     bestPrice: ads[0]?.price ?? null,
     avgFillPrice,
     usdt: totalUsdt,
@@ -167,8 +175,7 @@ export function calculateQuote(
 }
 
 /**
- * Greedily pick ads (in given order) until the USDT target is covered.
- * Pass already-filtered (confidence) ads for higher-trust auto-cover.
+ * Greedily pick ads until a USDT target is covered.
  */
 export function pickAdsToCover(
   ads: P2PAd[],
@@ -185,7 +192,43 @@ export function pickAdsToCover(
     remaining -= chunk;
   }
 
-  // If nothing could fill (limits), still preselect top few for manual mixing
+  if (selected.length === 0) {
+    return ads.slice(0, Math.min(5, ads.length)).map((a) => a.advNo);
+  }
+
+  return selected;
+}
+
+/**
+ * Greedily pick ads until a PYG target is covered (e.g. need ₲16.200.000).
+ */
+export function pickAdsToCoverByPyg(
+  ads: P2PAd[],
+  pygTarget: number,
+): string[] {
+  const selected: string[] = [];
+  let remaining = pygTarget;
+
+  for (const ad of ads) {
+    if (remaining <= 1) break;
+    const desiredUsdt = remaining / ad.price;
+    const chunk = clampUsdtToAdLimits(ad, desiredUsdt);
+    if (chunk == null) continue;
+
+    let usdt = chunk;
+    let pyg = usdt * ad.price;
+    if (pyg > remaining) {
+      usdt = remaining / ad.price;
+      const reclamped = clampUsdtToAdLimits(ad, usdt);
+      if (reclamped == null) continue;
+      usdt = reclamped;
+      pyg = usdt * ad.price;
+    }
+
+    selected.push(ad.advNo);
+    remaining -= pyg;
+  }
+
   if (selected.length === 0) {
     return ads.slice(0, Math.min(5, ads.length)).map((a) => a.advNo);
   }
@@ -204,4 +247,25 @@ export function maxUsdtForAd(ad: P2PAd): number {
     return Math.min(hardCap, ad.maxFiat / ad.price);
   }
   return hardCap;
+}
+
+/** Parse amounts like 16.200.000, 16,200,000, or 16200000. */
+export function parseAmountInput(raw: string): number {
+  const cleaned = raw.trim().replace(/\s/g, "");
+  if (!cleaned) return NaN;
+
+  if (/^\d{1,3}([.]\d{3})+$/.test(cleaned)) {
+    return Number(cleaned.replace(/\./g, ""));
+  }
+  if (/^\d{1,3}([,]\d{3})+$/.test(cleaned)) {
+    return Number(cleaned.replace(/,/g, ""));
+  }
+  if (/^\d{1,3}([.]\d{3})+,\d+$/.test(cleaned)) {
+    return Number(cleaned.replace(/\./g, "").replace(",", "."));
+  }
+  if (/^\d{1,3}([,]\d{3})+.\d+$/.test(cleaned)) {
+    return Number(cleaned.replace(/,/g, ""));
+  }
+
+  return Number(cleaned.replace(/,/g, ""));
 }

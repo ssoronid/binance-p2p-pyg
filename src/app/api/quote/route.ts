@@ -3,6 +3,7 @@ import { searchTrustedAds, type TradeSide } from "@/lib/binance-p2p";
 import {
   calculateQuote,
   pickAdsToCover,
+  pickAdsToCoverByPyg,
   type QuoteMode,
 } from "@/lib/calculator";
 import {
@@ -62,10 +63,10 @@ export async function GET(request: Request) {
     const confidentAds = filterConfidentAds(ads, filters);
     const pool = confidentAds.length > 0 ? confidentAds : ads;
 
-    const usdtTarget =
-      mode === "usdt_to_pyg" ? amount : amount / (pool[0]?.price || 1);
-
-    const suggestedIds = pickAdsToCover(pool, usdtTarget);
+    const suggestedIds =
+      mode === "pyg_to_usdt"
+        ? pickAdsToCoverByPyg(pool, amount)
+        : pickAdsToCover(pool, amount);
     const activeIds = selectedIds?.length ? selectedIds : suggestedIds;
     const activeSet = new Set(activeIds);
     const selectedAds = ads.filter((ad) => activeSet.has(ad.advNo));

@@ -11,10 +11,15 @@ import type { P2PAd } from "@/lib/binance-p2p";
 import {
   calculateQuote,
   maxUsdtForAd,
+  parseAmountInput,
   pickAdsToCover,
+  pickAdsToCoverByPyg,
   type QuoteMode,
   type QuoteResult,
 } from "@/lib/calculator";
+
+/** What the user is trying to solve for */
+type CalcGoal = "sell_usdt" | "need_pyg" | "buy_usdt";
 import {
   CONFIDENCE_PRESETS,
   DEFAULT_CONFIDENCE,
@@ -87,10 +92,18 @@ function filtersToParams(filters: ConfidenceFilters): URLSearchParams {
   return p;
 }
 
+function goalConfig(goal: CalcGoal): {
+  side: "SELL" | "BUY";
+  mode: QuoteMode;
+} {
+  if (goal === "buy_usdt") return { side: "BUY", mode: "pyg_to_usdt" };
+  if (goal === "need_pyg") return { side: "SELL", mode: "pyg_to_usdt" };
+  return { side: "SELL", mode: "usdt_to_pyg" };
+}
+
 export default function Calculator() {
-  const [side, setSide] = useState<"SELL" | "BUY">("SELL");
-  const [mode, setMode] = useState<QuoteMode>("usdt_to_pyg");
-  const [amount, setAmount] = useState("100");
+  const [goal, setGoal] = useState<CalcGoal>("need_pyg");
+  const [amount, setAmount] = useState("16200000");
   const [ads, setAds] = useState<P2PAd[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<ConfidenceFilters>(DEFAULT_CONFIDENCE);
@@ -100,10 +113,11 @@ export default function Calculator() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  const { side, mode } = goalConfig(goal);
   const activePreset = matchPreset(filters);
 
   const parsedAmount = useMemo(() => {
-    const n = Number(amount.replace(/,/g, ""));
+    const n = parseAmountInput(amount);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amount]);
 
@@ -112,7 +126,7 @@ export default function Calculator() {
     [ads, filters],
   );
 
-  const usdtTarget = useMemo(() => {
+  const coverTargetUsdt = useMemo(() => {
     if (!parsedAmount) return 0;
     if (mode === "usdt_to_pyg") return parsedAmount;
     const best = confidentAds[0]?.price ?? ads[0]?.price;
@@ -145,11 +159,15 @@ export default function Calculator() {
   }, [quote]);
 
   const applyAutoCover = useCallback(
-    (pool: P2PAd[], target: number) => {
+    (pool: P2PAd[]) => {
       const source = pool.length > 0 ? pool : ads;
-      setSelected(new Set(pickAdsToCover(source, target)));
+      if (mode === "pyg_to_usdt") {
+        setSelected(new Set(pickAdsToCoverByPyg(source, parsedAmount)));
+      } else {
+        setSelected(new Set(pickAdsToCover(source, parsedAmount)));
+      }
     },
-    [ads],
+    [ads, mode, parsedAmount],
   );
 
   const loadAds = useCallback(() => {
@@ -190,14 +208,14 @@ export default function Calculator() {
 
   useEffect(() => {
     loadAds();
-    // Initial + when side changes we refetch
+    // Initial + when goal (side/mode) changes we refetch
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [side]);
+  }, [goal]);
 
   // Re-run auto-cover when confidence filters change (client-side, no refetch)
   useEffect(() => {
-    if (ads.length === 0 || !usdtTarget) return;
-    applyAutoCover(confidentAds, usdtTarget);
+    if (ads.length === 0 || !parsedAmount) return;
+    applyAutoCover(confidentAds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
@@ -233,20 +251,36 @@ export default function Calculator() {
         <div className="flex flex-wrap gap-2 mb-5">
           <button
             type="button"
-            className={`chip ${side === "SELL" ? "chip-active" : ""}`}
+            className={`chip ${goal === "need_pyg" ? "chip-active" : ""}`}
             onClick={() => {
-              setSide("SELL");
-              setMode("usdt_to_pyg");
+              setGoal("need_pyg");
+              setAmount((prev) =>
+                parseAmountInput(prev) < 1000 ? "16200000" : prev,
+              );
+            }}
+          >
+            Need PYG → sell USDT
+          </button>
+          <button
+            type="button"
+            className={`chip ${goal === "sell_usdt" ? "chip-active" : ""}`}
+            onClick={() => {
+              setGoal("sell_usdt");
+              setAmount((prev) =>
+                parseAmountInput(prev) > 100000 ? "100" : prev,
+              );
             }}
           >
             Sell USDT → get PYG
           </button>
           <button
             type="button"
-            className={`chip ${side === "BUY" ? "chip-active" : ""}`}
+            className={`chip ${goal === "buy_usdt" ? "chip-active" : ""}`}
             onClick={() => {
-              setSide("BUY");
-              setMode("pyg_to_usdt");
+              setGoal("buy_usdt");
+              setAmount((prev) =>
+                parseAmountInput(prev) < 1000 ? "16200000" : prev,
+              );
             }}
           >
             Spend PYG → buy USDT
@@ -254,7 +288,11 @@ export default function Calculator() {
         </div>
 
         <label className="block text-sm text-[var(--muted)] mb-2">
-          {mode === "usdt_to_pyg" ? "USDT amount needed" : "PYG amount"}
+          {goal === "sell_usdt"
+            ? "USDT amount to sell"
+            : goal === "need_pyg"
+              ? "PYG you want to receive"
+              : "PYG you will spend"}
         </label>
         <div className="flex gap-3 items-stretch">
           <input
@@ -262,6 +300,9 @@ export default function Calculator() {
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            placeholder={
+              goal === "sell_usdt" ? "e.g. 100" : "e.g. 16.200.000"
+            }
             aria-label="Amount"
           />
           <button type="submit" className="cta" disabled={isPending}>
@@ -433,19 +474,41 @@ export default function Calculator() {
         <section className="result-block mt-6" aria-live="polite">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="result-label">Mixed quote</p>
+              <p className="result-label">
+                {goal === "need_pyg"
+                  ? "USDT to sell"
+                  : goal === "buy_usdt"
+                    ? "USDT you get"
+                    : "PYG you get"}
+              </p>
               <p className="result-value">
-                {mode === "usdt_to_pyg"
+                {goal === "sell_usdt"
                   ? formatPyg(quote.pyg)
                   : `${formatUsdt(quote.usdt)} USDT`}
               </p>
               <p className="result-sub">
-                {formatUsdt(quote.usdt)} / {formatUsdt(usdtTarget)} USDT covered
+                {goal === "need_pyg" && (
+                  <>
+                    to receive {formatPyg(quote.pyg)}
+                    {parsedAmount > 0 && quote.pyg < parsedAmount && (
+                      <> (target {formatPyg(parsedAmount)})</>
+                    )}
+                  </>
+                )}
+                {goal === "sell_usdt" && (
+                  <>for {formatUsdt(quote.usdt)} USDT sold</>
+                )}
+                {goal === "buy_usdt" && (
+                  <>for {formatPyg(quote.pyg)} spent</>
+                )}
                 {quote.avgFillPrice != null && (
                   <> · avg {formatPyg(quote.avgFillPrice)} / USDT</>
                 )}
                 {" · "}
                 {quote.adsUsed} merchant{quote.adsUsed === 1 ? "" : "s"}
+                {goal === "need_pyg" && coverTargetUsdt > 0 && (
+                  <> · ~{formatUsdt(coverTargetUsdt)} est. at best</>
+                )}
               </p>
             </div>
             <div className="coverage min-w-[10rem]">
@@ -461,8 +524,9 @@ export default function Calculator() {
               </div>
               {!quote.filledFully && (
                 <p className="mt-1 text-xs text-[var(--warn)]">
-                  Still need {formatUsdt(quote.remainingUsdt)} USDT — loosen
-                  filters or pick another merchant
+                  {mode === "pyg_to_usdt"
+                    ? `Still short ${formatPyg(quote.remainingPyg)} — loosen filters or pick another merchant`
+                    : `Still need ${formatUsdt(quote.remainingUsdt)} USDT — loosen filters or pick another merchant`}
                 </p>
               )}
             </div>
@@ -499,7 +563,7 @@ export default function Calculator() {
               <button
                 type="button"
                 className="chip"
-                onClick={() => applyAutoCover(confidentAds, usdtTarget)}
+                onClick={() => applyAutoCover(confidentAds)}
               >
                 Auto-cover
               </button>
