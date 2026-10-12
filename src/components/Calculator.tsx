@@ -15,6 +15,17 @@ import {
   type QuoteMode,
   type QuoteResult,
 } from "@/lib/calculator";
+import {
+  CONFIDENCE_PRESETS,
+  DEFAULT_CONFIDENCE,
+  confidenceFailReasons,
+  describeFailReasons,
+  filterConfidentAds,
+  matchPreset,
+  passesConfidence,
+  type ConfidenceFilters,
+  type ConfidencePreset,
+} from "@/lib/confidence";
 
 type AdsResponse = {
   pair: string;
@@ -24,6 +35,7 @@ type AdsResponse = {
   selectedIds: string[];
   ads: P2PAd[];
   quote: QuoteResult;
+  confidentCount?: number;
   error?: string;
 };
 
@@ -62,27 +74,54 @@ function identityLabel(id: string) {
     .join(" ");
 }
 
+function filtersToParams(filters: ConfidenceFilters): URLSearchParams {
+  const p = new URLSearchParams();
+  const preset = matchPreset(filters);
+  if (preset) p.set("preset", preset);
+  p.set("minTrades", String(filters.minMonthlyTrades));
+  p.set("minCompletion", String(filters.minCompletionRate));
+  p.set("minPositive", String(filters.minPositiveRate));
+  p.set("minGrade", String(filters.minUserGrade));
+  p.set("maxActive", String(filters.maxActiveSeconds));
+  p.set("massOnly", filters.massMerchantOnly ? "1" : "0");
+  return p;
+}
+
 export default function Calculator() {
   const [side, setSide] = useState<"SELL" | "BUY">("SELL");
   const [mode, setMode] = useState<QuoteMode>("usdt_to_pyg");
   const [amount, setAmount] = useState("100");
   const [ads, setAds] = useState<P2PAd[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState<ConfidenceFilters>(DEFAULT_CONFIDENCE);
+  const [showExcluded, setShowExcluded] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const activePreset = matchPreset(filters);
 
   const parsedAmount = useMemo(() => {
     const n = Number(amount.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, [amount]);
 
+  const confidentAds = useMemo(
+    () => filterConfidentAds(ads, filters),
+    [ads, filters],
+  );
+
   const usdtTarget = useMemo(() => {
     if (!parsedAmount) return 0;
     if (mode === "usdt_to_pyg") return parsedAmount;
-    const best = ads[0]?.price;
+    const best = confidentAds[0]?.price ?? ads[0]?.price;
     return best ? parsedAmount / best : 0;
-  }, [parsedAmount, mode, ads]);
+  }, [parsedAmount, mode, ads, confidentAds]);
+
+  const visibleAds = useMemo(
+    () => (showExcluded ? ads : confidentAds),
+    [ads, confidentAds, showExcluded],
+  );
 
   const selectedAds = useMemo(
     () => ads.filter((ad) => selected.has(ad.advNo)),
@@ -104,6 +143,14 @@ export default function Calculator() {
     return map;
   }, [quote]);
 
+  const applyAutoCover = useCallback(
+    (pool: P2PAd[], target: number) => {
+      const source = pool.length > 0 ? pool : ads;
+      setSelected(new Set(pickAdsToCover(source, target)));
+    },
+    [ads],
+  );
+
   const loadAds = useCallback(() => {
     if (!parsedAmount) {
       setError("Enter a positive amount.");
@@ -119,6 +166,8 @@ export default function Calculator() {
           mode,
           trusted: "1",
         });
+        filtersToParams(filters).forEach((v, k) => params.set(k, v));
+
         const res = await fetch(`/api/quote?${params.toString()}`);
         const json = (await res.json()) as AdsResponse & { error?: string };
         if (!res.ok) {
@@ -136,13 +185,20 @@ export default function Calculator() {
         setSelected(new Set());
       }
     });
-  }, [parsedAmount, mode, side]);
+  }, [parsedAmount, mode, side, filters]);
 
   useEffect(() => {
     loadAds();
     // Initial + when side changes we refetch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side]);
+
+  // Re-run auto-cover when confidence filters change (client-side, no refetch)
+  useEffect(() => {
+    if (ads.length === 0 || !usdtTarget) return;
+    applyAutoCover(confidentAds, usdtTarget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   function toggleAd(advNo: string) {
     setSelected((prev) => {
@@ -153,16 +209,15 @@ export default function Calculator() {
     });
   }
 
-  function selectSuggested() {
-    setSelected(new Set(pickAdsToCover(ads, usdtTarget)));
+  function setPreset(preset: ConfidencePreset) {
+    setFilters(CONFIDENCE_PRESETS[preset]);
   }
 
-  function selectAll() {
-    setSelected(new Set(ads.map((a) => a.advNo)));
-  }
-
-  function clearAll() {
-    setSelected(new Set());
+  function patchFilter<K extends keyof ConfidenceFilters>(
+    key: K,
+    value: ConfidenceFilters[K],
+  ) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
@@ -214,12 +269,128 @@ export default function Calculator() {
         </div>
 
         <p className="mt-3 text-xs text-[var(--muted)]">
-          Trusted merchants only · tick/untick to mix until your USDT is covered
+          Trusted merchants · confidence filters drive auto-check
           {fetchedAt && (
             <> · updated {new Date(fetchedAt).toLocaleTimeString()}</>
           )}
         </p>
       </form>
+
+      <section className="calc-panel mt-4" aria-label="Confidence filters">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-sm font-medium tracking-wide uppercase text-[var(--muted)]">
+            Confidence filters
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(CONFIDENCE_PRESETS) as ConfidencePreset[]).map(
+              (key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`chip ${activePreset === key ? "chip-active" : ""}`}
+                  onClick={() => setPreset(key)}
+                >
+                  {key}
+                </button>
+              ),
+            )}
+            {activePreset == null && <span className="chip chip-active">custom</span>}
+          </div>
+        </div>
+
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Min monthly trades</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={filters.minMonthlyTrades}
+              onChange={(e) =>
+                patchFilter("minMonthlyTrades", Number(e.target.value) || 0)
+              }
+            />
+          </label>
+          <label className="filter-field">
+            <span>Min completion %</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={Number((filters.minCompletionRate * 100).toFixed(1))}
+              onChange={(e) =>
+                patchFilter(
+                  "minCompletionRate",
+                  Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100,
+                )
+              }
+            />
+          </label>
+          <label className="filter-field">
+            <span>Min positive %</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={Number((filters.minPositiveRate * 100).toFixed(1))}
+              onChange={(e) =>
+                patchFilter(
+                  "minPositiveRate",
+                  Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100,
+                )
+              }
+            />
+          </label>
+          <label className="filter-field">
+            <span>Min grade</span>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              step={1}
+              value={filters.minUserGrade}
+              onChange={(e) =>
+                patchFilter("minUserGrade", Number(e.target.value) || 0)
+              }
+            />
+          </label>
+          <label className="filter-field">
+            <span>Max last-seen (min)</span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={
+                filters.maxActiveSeconds > 0
+                  ? Math.round(filters.maxActiveSeconds / 60)
+                  : 0
+              }
+              onChange={(e) => {
+                const mins = Number(e.target.value) || 0;
+                patchFilter("maxActiveSeconds", mins > 0 ? mins * 60 : 0);
+              }}
+            />
+            <em className="filter-hint">0 = off</em>
+          </label>
+          <label className="filter-check">
+            <input
+              type="checkbox"
+              checked={filters.massMerchantOnly}
+              onChange={(e) =>
+                patchFilter("massMerchantOnly", e.target.checked)
+              }
+            />
+            <span>Mass merchants only</span>
+          </label>
+        </div>
+
+        <p className="mt-3 text-xs text-[var(--muted)]">
+          {confidentAds.length} / {ads.length || 0} merchants pass · Auto-cover
+          uses this pool
+        </p>
+      </section>
 
       {error && (
         <p className="mt-4 text-sm text-[var(--danger)]" role="alert">
@@ -259,8 +430,8 @@ export default function Calculator() {
               </div>
               {!quote.filledFully && (
                 <p className="mt-1 text-xs text-[var(--warn)]">
-                  Still need {formatUsdt(quote.remainingUsdt)} USDT — select
-                  another merchant
+                  Still need {formatUsdt(quote.remainingUsdt)} USDT — loosen
+                  filters or pick another merchant
                 </p>
               )}
             </div>
@@ -276,7 +447,7 @@ export default function Calculator() {
                     <span className="text-[var(--muted)]">
                       {" "}
                       {formatUsdt(f.usdtFilled)} USDT → {formatPyg(f.pygFilled)}{" "}
-                      @ {formatPyg(f.price)}
+                      @ {formatPyg(f.price)} · {f.monthOrderCount} ops
                     </span>
                   </li>
                 ))}
@@ -290,35 +461,55 @@ export default function Calculator() {
         <section className="mt-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <h2 className="text-sm font-medium tracking-wide uppercase text-[var(--muted)]">
-              Merchants ({selected.size}/{ads.length} selected)
+              Merchants ({selected.size} selected · {confidentAds.length}{" "}
+              confident)
             </h2>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="chip" onClick={selectSuggested}>
+              <button
+                type="button"
+                className="chip"
+                onClick={() => applyAutoCover(confidentAds, usdtTarget)}
+              >
                 Auto-cover
               </button>
-              <button type="button" className="chip" onClick={selectAll}>
-                All
+              <button
+                type="button"
+                className="chip"
+                onClick={() =>
+                  setSelected(new Set(confidentAds.map((a) => a.advNo)))
+                }
+              >
+                All confident
               </button>
-              <button type="button" className="chip" onClick={clearAll}>
+              <button
+                type="button"
+                className="chip"
+                onClick={() => setSelected(new Set())}
+              >
                 None
+              </button>
+              <button
+                type="button"
+                className={`chip ${showExcluded ? "chip-active" : ""}`}
+                onClick={() => setShowExcluded((v) => !v)}
+              >
+                {showExcluded ? "Hide excluded" : "Show excluded"}
               </button>
             </div>
           </div>
 
           <ul className="merchant-list">
-            {ads.map((ad) => {
+            {visibleAds.map((ad) => {
               const checked = selected.has(ad.advNo);
               const fill = fillByAdv.get(ad.advNo);
               const maxUsdt = maxUsdtForAd(ad);
-              const lowConfidence =
-                ad.monthFinishRate < 0.9 ||
-                ad.positiveRate < 0.95 ||
-                ad.monthOrderCount < 20;
+              const ok = passesConfidence(ad, filters);
+              const failReasons = confidenceFailReasons(ad, filters);
 
               return (
                 <li
                   key={ad.advNo}
-                  className={`merchant-row ${checked ? "selected" : ""} ${fill ? "in-fill" : ""} ${lowConfidence ? "caution" : ""}`}
+                  className={`merchant-row ${checked ? "selected" : ""} ${fill ? "in-fill" : ""} ${ok ? "" : "excluded"}`}
                 >
                   <label className="merchant-label">
                     <input
@@ -333,8 +524,12 @@ export default function Calculator() {
                           <span className="font-medium text-base">
                             {ad.nickName}
                           </span>
-                          {lowConfidence && (
-                            <span className="badge warn">Low confidence</span>
+                          {ok ? (
+                            <span className="badge ok">Passes filters</span>
+                          ) : (
+                            <span className="badge warn">
+                              Excluded: {describeFailReasons(failReasons)}
+                            </span>
                           )}
                           {ad.badges.map((b) => (
                             <span key={b} className="badge">
@@ -386,7 +581,8 @@ export default function Calculator() {
                           </strong>
                         </span>
                         <span>
-                          Active <strong>{formatActive(ad.activeTimeInSecond)}</strong>
+                          Active{" "}
+                          <strong>{formatActive(ad.activeTimeInSecond)}</strong>
                         </span>
                       </div>
 

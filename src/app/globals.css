@@ -275,8 +275,70 @@ body {
   border-color: rgba(230, 195, 92, 0.45);
 }
 
+.badge.ok {
+  color: var(--accent);
+  border-color: rgba(62, 207, 122, 0.45);
+}
+
 .badge.muted {
   opacity: 0.85;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.filter-field input {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  color: var(--foreground);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.filter-field input:focus {
+  border-color: var(--accent);
+}
+
+.filter-hint {
+  font-style: normal;
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--foreground);
+  align-self: end;
+  padding-bottom: 0.35rem;
+  cursor: pointer;
+}
+
+.filter-check input {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+}
+
+.merchant-row.excluded {
+  opacity: 0.55;
+  border-style: dashed;
 }
 
 .pay-chip {

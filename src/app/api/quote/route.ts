@@ -5,6 +5,10 @@ import {
   pickAdsToCover,
   type QuoteMode,
 } from "@/lib/calculator";
+import {
+  filterConfidentAds,
+  parseConfidenceFromSearchParams,
+} from "@/lib/confidence";
 
 function parseSide(value: string | null): TradeSide {
   return value?.toUpperCase() === "BUY" ? "BUY" : "SELL";
@@ -21,6 +25,7 @@ export async function GET(request: Request) {
   const side = parseSide(searchParams.get("side"));
   const mode = parseMode(searchParams.get("mode"));
   const trustedOnly = searchParams.get("trusted") !== "0";
+  const filters = parseConfidenceFromSearchParams(searchParams);
   const selectedParam = searchParams.get("selected");
   const selectedIds = selectedParam
     ? selectedParam.split(",").map((s) => s.trim()).filter(Boolean)
@@ -54,10 +59,13 @@ export async function GET(request: Request) {
       );
     }
 
-    const usdtTarget =
-      mode === "usdt_to_pyg" ? amount : amount / (ads[0]?.price || 1);
+    const confidentAds = filterConfidentAds(ads, filters);
+    const pool = confidentAds.length > 0 ? confidentAds : ads;
 
-    const suggestedIds = pickAdsToCover(ads, usdtTarget);
+    const usdtTarget =
+      mode === "usdt_to_pyg" ? amount : amount / (pool[0]?.price || 1);
+
+    const suggestedIds = pickAdsToCover(pool, usdtTarget);
     const activeIds = selectedIds?.length ? selectedIds : suggestedIds;
     const activeSet = new Set(activeIds);
     const selectedAds = ads.filter((ad) => activeSet.has(ad.advNo));
@@ -68,6 +76,8 @@ export async function GET(request: Request) {
       pair: "USDT/PYG",
       trustedOnly,
       fetchedAt: new Date().toISOString(),
+      filters,
+      confidentCount: confidentAds.length,
       suggestedIds,
       selectedIds: activeIds,
       ads,

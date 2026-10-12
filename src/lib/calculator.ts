@@ -168,6 +168,7 @@ export function calculateQuote(
 
 /**
  * Greedily pick ads (in given order) until the USDT target is covered.
+ * Pass already-filtered (confidence) ads for higher-trust auto-cover.
  */
 export function pickAdsToCover(
   ads: P2PAd[],
