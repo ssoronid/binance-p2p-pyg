@@ -7,11 +7,22 @@ export type P2PAd = {
   advNo: string;
   price: number;
   surplusAmount: number;
+  tradableQuantity: number;
   minFiat: number;
   maxFiat: number;
+  minUsdt: number;
+  maxUsdt: number;
+  payTimeLimitMin: number;
   nickName: string;
+  userNo: string;
   monthOrderCount: number;
   monthFinishRate: number;
+  positiveRate: number;
+  userGrade: number;
+  userIdentity: string;
+  badges: string[];
+  vipLevel: number;
+  activeTimeInSecond: number | null;
   userType: string;
   isMerchant: boolean;
   paymentMethods: string[];
@@ -22,15 +33,28 @@ type BinanceAdvRow = {
     advNo?: string;
     price?: string;
     surplusAmount?: string;
+    tradableQuantity?: string;
     minSingleTransAmount?: string;
     maxSingleTransAmount?: string;
+    minSingleTransQuantity?: string;
+    maxSingleTransQuantity?: string;
+    dynamicMaxSingleTransAmount?: string;
+    dynamicMaxSingleTransQuantity?: string;
+    payTimeLimit?: number;
     tradeMethods?: Array<{ tradeMethodName?: string }>;
   };
   advertiser?: {
+    userNo?: string;
     nickName?: string;
     monthOrderCount?: number;
     monthFinishRate?: number;
+    positiveRate?: number;
     userType?: string;
+    userGrade?: number;
+    userIdentity?: string;
+    badges?: string[];
+    vipLevel?: number;
+    activeTimeInSecond?: number;
   };
 };
 
@@ -88,18 +112,39 @@ function mapRow(row: BinanceAdvRow): P2PAd | null {
   const price = Number(adv.price);
   if (!Number.isFinite(price) || price <= 0) return null;
 
+  const surplusAmount = Number(adv.surplusAmount ?? 0);
+  const tradableQuantity = Number(adv.tradableQuantity ?? surplusAmount);
+  const dynamicMaxUsdt = Number(adv.dynamicMaxSingleTransQuantity ?? 0);
+  const maxUsdtRaw = Number(adv.maxSingleTransQuantity ?? 0);
+  const minUsdt = Number(adv.minSingleTransQuantity ?? 0);
+
   return {
     advNo: adv.advNo,
     price,
-    surplusAmount: Number(adv.surplusAmount ?? 0),
+    surplusAmount,
+    tradableQuantity,
     minFiat: Number(adv.minSingleTransAmount ?? 0),
-    maxFiat: Number(adv.maxSingleTransAmount ?? 0),
+    maxFiat: Number(
+      adv.dynamicMaxSingleTransAmount ?? adv.maxSingleTransAmount ?? 0,
+    ),
+    minUsdt,
+    maxUsdt: dynamicMaxUsdt || maxUsdtRaw || surplusAmount,
+    payTimeLimitMin: adv.payTimeLimit ?? 0,
     nickName: advertiser?.nickName ?? "Unknown",
+    userNo: advertiser?.userNo ?? "",
     monthOrderCount: advertiser?.monthOrderCount ?? 0,
     monthFinishRate: advertiser?.monthFinishRate ?? 0,
+    positiveRate: advertiser?.positiveRate ?? 0,
+    userGrade: advertiser?.userGrade ?? 0,
+    userIdentity: advertiser?.userIdentity ?? "",
+    badges: advertiser?.badges ?? [],
+    vipLevel: advertiser?.vipLevel ?? 0,
+    activeTimeInSecond:
+      typeof advertiser?.activeTimeInSecond === "number"
+        ? advertiser.activeTimeInSecond
+        : null,
     userType: advertiser?.userType ?? "user",
-    isMerchant:
-      (advertiser?.userType ?? "").toLowerCase() === "merchant",
+    isMerchant: (advertiser?.userType ?? "").toLowerCase() === "merchant",
     paymentMethods: (adv.tradeMethods ?? [])
       .map((m) => m.tradeMethodName)
       .filter((n): n is string => Boolean(n)),
@@ -117,12 +162,13 @@ export async function searchTrustedAds(
     asset = "USDT",
     fiat = "PYG",
     tradeType,
-    pages = 2,
+    pages = 3,
     rows = 20,
     trustedOnly = true,
   } = options;
 
   const ads: P2PAd[] = [];
+  const seen = new Set<string>();
 
   for (let page = 1; page <= pages; page += 1) {
     const body: Record<string, unknown> = {
@@ -149,7 +195,9 @@ export async function searchTrustedAds(
 
     for (const row of rowsData) {
       const mapped = mapRow(row);
-      if (mapped) ads.push(mapped);
+      if (!mapped || seen.has(mapped.advNo)) continue;
+      seen.add(mapped.advNo);
+      ads.push(mapped);
     }
 
     if (rowsData.length < rows) break;
