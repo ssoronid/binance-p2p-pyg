@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0c1410;
+  --foreground: #e8f0ea;
+  --muted: #8fa396;
+  --panel: rgba(18, 36, 26, 0.72);
+  --panel-border: rgba(120, 180, 140, 0.22);
+  --accent: #3ecf7a;
+  --accent-dim: #1f8a4c;
+  --danger: #ff7b7b;
+  --warn: #e6c35c;
+  --glow: rgba(62, 207, 122, 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-display), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+.page-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, var(--glow), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(46, 120, 80, 0.25), transparent 50%),
+    linear-gradient(165deg, #0a120e 0%, #0f1c14 45%, #0b1510 100%);
+}
+
+.page-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(232, 240, 234, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 240, 234, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black, transparent);
+  pointer-events: none;
+}
+
+.brand {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  line-height: 0.95;
+}
+
+.brand span {
+  color: var(--accent);
+}
+
+.tagline {
+  color: var(--muted);
+  font-size: 1.05rem;
+  max-width: 28rem;
+  line-height: 1.5;
+}
+
+.calc-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(12px);
+  border-radius: 1rem;
+  padding: 1.25rem 1.25rem 1.1rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+.chip {
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--foreground);
+  border-color: rgba(62, 207, 122, 0.4);
+}
+
+.chip-active {
+  background: rgba(62, 207, 122, 0.15);
+  color: var(--accent);
+  border-color: rgba(62, 207, 122, 0.45);
+}
+
+.amount-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  font-size: 1.35rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--foreground);
+  outline: none;
+  min-width: 0;
+}
+
+.amount-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(62, 207, 122, 0.15);
+}
+
+.cta {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  color: #04140a;
+  font-weight: 700;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0 1.25rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  white-space: nowrap;
+}
+
+.cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.cta:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.result-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.result-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin-top: 0.35rem;
+  animation: rise 0.45s ease both;
+}
+
+.result-sub {
+  color: var(--muted);
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.offer-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.offer-list li {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 0.75rem;
+  animation: rise 0.5s ease both;
+}
+
+.offer-list li:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.offer-list li:nth-child(3) {
+  animation-delay: 0.1s;
+}
+.offer-list li:nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-value,
+  .offer-list li,
+  .cta:hover:not(:disabled) {
+    animation: none;
+    transform: none;
+  }
+}
