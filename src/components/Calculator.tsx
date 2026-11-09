@@ -32,6 +32,17 @@ import {
   type ConfidencePreset,
 } from "@/lib/confidence";
 
+type BestBid = {
+  advNo: string;
+  price: number;
+  nickName: string;
+  minUsdt: number;
+  maxUsdt: number;
+  minFiat: number;
+  maxFiat: number;
+  paymentMethods: string[];
+};
+
 type AdsResponse = {
   pair: string;
   trustedOnly: boolean;
@@ -40,9 +51,13 @@ type AdsResponse = {
   selectedIds: string[];
   ads: P2PAd[];
   quote: QuoteResult;
+  bestBid?: BestBid | null;
   confidentCount?: number;
   error?: string;
 };
+
+const BINANCE_SELL_USDT_URL =
+  "https://p2p.binance.com/en/trade/sell/USDT?fiat=PYG";
 
 function formatPyg(n: number) {
   return new Intl.NumberFormat("es-PY", {
@@ -110,6 +125,7 @@ export default function Calculator() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [bestBid, setBestBid] = useState<BestBid | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -152,6 +168,25 @@ export default function Calculator() {
     });
   }, [parsedAmount, selectedAds, mode, side]);
 
+  // On SELL goals the list is the bid book — keep tip aligned with filters.
+  const displayBestBid = useMemo((): BestBid | null => {
+    if (side === "SELL") {
+      const top = confidentAds[0] ?? ads[0];
+      if (!top) return null;
+      return {
+        advNo: top.advNo,
+        price: top.price,
+        nickName: top.nickName,
+        minUsdt: top.minUsdt,
+        maxUsdt: top.maxUsdt,
+        minFiat: top.minFiat,
+        maxFiat: top.maxFiat,
+        paymentMethods: top.paymentMethods,
+      };
+    }
+    return bestBid;
+  }, [side, confidentAds, ads, bestBid]);
+
   const fillByAdv = useMemo(() => {
     const map = new Map<string, QuoteResult["fills"][number]>();
     quote?.fills.forEach((f) => map.set(f.advNo, f));
@@ -192,16 +227,19 @@ export default function Calculator() {
         if (!res.ok) {
           setAds([]);
           setSelected(new Set());
+          setBestBid(null);
           setError(json.error || "Could not fetch merchants.");
           return;
         }
         setAds(json.ads);
         setFetchedAt(json.fetchedAt);
+        setBestBid(json.bestBid ?? null);
         setSelected(new Set(json.suggestedIds));
       } catch {
         setError("Network error talking to Binance P2P.");
         setAds([]);
         setSelected(new Set());
+        setBestBid(null);
       }
     });
   }, [parsedAmount, mode, side, filters]);
@@ -547,6 +585,54 @@ export default function Calculator() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {displayBestBid && (
+            <div className="best-bid mt-4 text-sm">
+              <p className="result-label mb-1">Best bid (buy PYG / sell USDT)</p>
+              <p>
+                <span className="font-medium">
+                  {formatPyg(displayBestBid.price)}
+                </span>
+                <span className="text-[var(--muted)]">
+                  {" "}
+                  / USDT · {displayBestBid.nickName}
+                  {displayBestBid.maxUsdt > 0 && (
+                    <>
+                      {" "}
+                      · up to {formatUsdt(displayBestBid.maxUsdt)} USDT (
+                      {formatPyg(displayBestBid.maxFiat)})
+                    </>
+                  )}
+                </span>
+              </p>
+              {goal === "buy_usdt" &&
+                quote.avgFillPrice != null &&
+                displayBestBid.price > quote.avgFillPrice && (
+                  <p className="mt-1 text-[var(--muted)]">
+                    Spread vs your buy fill:{" "}
+                    {formatPyg(displayBestBid.price - quote.avgFillPrice)} /
+                    USDT higher if you sell USDT into this bid instead.
+                  </p>
+                )}
+              <p className="mt-1 text-[var(--muted)]">
+                To lock that PYG rate, take their{" "}
+                <a
+                  href={BINANCE_SELL_USDT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  Sell USDT
+                </a>{" "}
+                ad on Binance. P2P does not take counter-offers — match the
+                listed price, or post your own Sell USDT ad if you want a
+                different rate.
+                {side !== "SELL" && (
+                  <> Use “Need PYG” or “Sell USDT” here to plan the fill.</>
+                )}
+              </p>
             </div>
           )}
         </section>

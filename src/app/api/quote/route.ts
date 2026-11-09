@@ -40,13 +40,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    const ads = await searchTrustedAds({
-      asset: "USDT",
-      fiat: "PYG",
-      tradeType: side,
-      trustedOnly,
-      pages: 3,
-    });
+    // Best bid = SELL book (merchants buying USDT → you get more PYG). Always higher than ask.
+    const [ads, sellAds] = await Promise.all([
+      searchTrustedAds({
+        asset: "USDT",
+        fiat: "PYG",
+        tradeType: side,
+        trustedOnly,
+        pages: 3,
+      }),
+      side === "SELL"
+        ? Promise.resolve(null)
+        : searchTrustedAds({
+            asset: "USDT",
+            fiat: "PYG",
+            tradeType: "SELL",
+            trustedOnly,
+            pages: 1,
+          }),
+    ]);
 
     if (ads.length === 0) {
       return NextResponse.json(
@@ -62,6 +74,23 @@ export async function GET(request: Request) {
 
     const confidentAds = filterConfidentAds(ads, filters);
     const pool = confidentAds.length > 0 ? confidentAds : ads;
+
+    const bidSource = side === "SELL" ? ads : (sellAds ?? []);
+    const confidentBid = filterConfidentAds(bidSource, filters);
+    const bidPool = confidentBid.length > 0 ? confidentBid : bidSource;
+    const topBid = bidPool[0] ?? null;
+    const bestBid = topBid
+      ? {
+          advNo: topBid.advNo,
+          price: topBid.price,
+          nickName: topBid.nickName,
+          minUsdt: topBid.minUsdt,
+          maxUsdt: topBid.maxUsdt,
+          minFiat: topBid.minFiat,
+          maxFiat: topBid.maxFiat,
+          paymentMethods: topBid.paymentMethods,
+        }
+      : null;
 
     const suggestedIds =
       mode === "pyg_to_usdt"
@@ -83,6 +112,7 @@ export async function GET(request: Request) {
       selectedIds: activeIds,
       ads,
       quote,
+      bestBid,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
